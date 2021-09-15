@@ -226,6 +226,8 @@ class EcdsaAwsKms(Provider):
 # 'pub_key_der' is the ASN.1 representation of the public key as bytes
 # 'pub_key_rpb' is a the public key in a pre-computed form (RPB)
 # 'hash_func' hash function to use (SHA256 or SHA512)
+# 'purpose' is the purpose for which the signature is computed. When None, no
+#           purpose is added to the signature.
 # The hash is returned as a SHAxHash object.
 #
 # Each file specified is hashed separately, then each hash is concatenated
@@ -235,13 +237,15 @@ class EcdsaAwsKms(Provider):
 # hashed and concatenated at the end. Only intermediate hash need to be
 # stored not complete files.
 #===============================================================================
-def compute_final_hash(archive, filenames, pub_key_der, pub_key_rpb, hash_func):
+def compute_final_hash(archive, filenames, pub_key_der, pub_key_rpb, hash_func, purpose=None):
     _hash = hash_func.new()
     tarfd = tarfile.open(archive, "r:")
     for filename in filenames:
         _hash.update(hash_func.new(tarfd.extractfile(filename).read()).digest())
     tarfd.close()
     _hash.update(";".join(filenames).encode("UTF-8"))
+    if purpose is not None:
+        _hash.update(purpose.encode("UTF-8"))
     _hash.update(pub_key_der)
     _hash.update(pub_key_rpb)
     return _hash
@@ -258,9 +262,11 @@ def compute_final_hash(archive, filenames, pub_key_der, pub_key_rpb, hash_func):
 #                 or DSS signature for ecdsa
 #===============================================================================
 def generate_signature_contents(filenames,
-        pub_key_der_hex, pub_key_rpb_hex, signature_hex):
+        pub_key_der_hex, pub_key_rpb_hex, signature_hex, purpose=None):
     buf = io.StringIO()
     buf.write("filenames=%s\n" % ";".join(filenames))
+    if purpose is not None:
+        buf.write("purpose=%s\n" % purpose)
     buf.write("pub_key_der=%s\n" % pub_key_der_hex)
     buf.write("pub_key_rpb=%s\n" % pub_key_rpb_hex)
     buf.write("signature=%s\n" % signature_hex)
@@ -288,7 +294,7 @@ def add_signature_file(archive, name, signature_contents):
 #===============================================================================
 # Sign an archive
 #===============================================================================
-def sign_archive(archive, name, filenames, provider, hash_func):
+def sign_archive(archive, name, filenames, provider, hash_func, purpose=None):
     info = provider.get_info()
 
     pub_key_der_hex = info["pub_key_der"]
@@ -297,12 +303,12 @@ def sign_archive(archive, name, filenames, provider, hash_func):
     pub_key_rpb = binascii.a2b_hex(pub_key_rpb_hex)
 
     _hash = compute_final_hash(archive, filenames,
-            pub_key_der, pub_key_rpb, hash_func)
+            pub_key_der, pub_key_rpb, hash_func, purpose=purpose)
 
     signature_hex = provider.sign(_hash)
 
     signature_contents = generate_signature_contents(filenames,
-            pub_key_der_hex, pub_key_rpb_hex, signature_hex)
+            pub_key_der_hex, pub_key_rpb_hex, signature_hex, purpose=purpose)
 
     add_signature_file(archive, name, signature_contents)
 
@@ -326,6 +332,10 @@ def main():
     parser.add_argument("-k", "--key",
         dest="key",
         help="key to use for signing")
+
+    parser.add_argument("--purpose",
+            dest="purpose",
+            help="purpose for which the signature is generated (typical value is 'firmware-package')")
 
     parser.add_argument("--hash",
         dest="hash",
@@ -361,7 +371,7 @@ def main():
     }
     hash_func = HASH_FUNCS[options.hash]
 
-    sign_archive(options.archive, options.name, filenames, provider, hash_func)
+    sign_archive(options.archive, options.name, filenames, provider, hash_func, purpose=options.purpose)
 
 
 if __name__ == "__main__":
