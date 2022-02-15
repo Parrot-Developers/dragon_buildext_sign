@@ -189,6 +189,35 @@ class EcdsaYhsm(Provider):
 
 
 #===============================================================================
+# Ecdsa Remote signing with AWS kms:
+# https://aws.amazon.com/kms/
+#===============================================================================
+class EcdsaAwsKms(Provider):
+    def __init__(self, key):
+        import boto3
+        self.kms_client = boto3.client("kms")
+        self.key = key
+
+    def get_info(self):
+        response = self.kms_client.get_public_key(KeyId=self.key)
+        pubkey = response["PublicKey"]
+        return {
+            "pub_key_der": binascii.b2a_hex(pubkey).decode("UTF-8"),
+            "pub_key_rpb": "",
+        }
+
+    def sign(self, msg_hash):
+        digest = msg_hash.digest()
+        response = self.kms_client.sign(KeyId=self.key,
+                MessageType="DIGEST",
+                Message=digest,
+                SigningAlgorithm="ECDSA_SHA_512")
+        signature = response["Signature"]
+
+        return binascii.b2a_hex(signature).decode("UTF-8")
+
+
+#===============================================================================
 # Compute the final hash value which will used to sign the update archive.
 # 'archive' is a path to an uncompressed tar archive containing the files
 #           to hash
@@ -315,6 +344,7 @@ def main():
         "ecdsa:local:": EcdsaLocal,
         "ecdsa:remote:": EcdsaRemote,
         "ecdsa:yhsm:": EcdsaYhsm,
+        "ecdsa:aws-kms:": EcdsaAwsKms,
     }
 
     def get_provider():

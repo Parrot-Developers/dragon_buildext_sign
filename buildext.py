@@ -16,6 +16,7 @@ SIGN_SCRIPT = os.path.join(os.path.dirname(__file__), "sign.py")
 #   ecdsa:local:<path>
 #   ecdsa:remote:<name>
 #   ecdsa:yhsm:<name>
+#   ecdsa:aws-kms:<key-id>
 # name: name of the signature file to create.
 # hash_type: hash type (sha256 or sha512)
 #===============================================================================
